@@ -1,0 +1,27 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Log files
+*.log
+
+# Virtual environment
+venv/
+env/
+ENV/
+
+# VS Code settings
+.vscode/
+*.code-workspace
+
+# OS junk
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# IDE
+.idea/
+*.swp
+*.swo
