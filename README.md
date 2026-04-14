@@ -265,4 +265,31 @@ MIT License
 
 ---
 
+## 📁 Available Versions
+
+| File             | Description            | Use Case                             |
+| ---------------- | ---------------------- | ------------------------------------ |
+| `BTCDump.py`     | Full terminal version  | Original CLI interface               |
+| `app.py`         | Complete web dashboard | Full features, needs internet        |
+| `app_offline.py` | Offline demo mode      | No internet required, simulated data |
+| `app_simple.py`  | Lightweight web UI     | Slow connections, basic features     |
+
+### Quick Start Examples:
+
+```bash
+# Offline demo (no internet needed)
+python app_offline.py
+
+# Lightweight version (good for slow connections)
+python app_simple.py
+
+# Full version (requires internet)
+python app.py
+
+# Terminal version
+python BTCDump.py
+```
+
+---
+
 **BTC Dump Pro v3.0**
