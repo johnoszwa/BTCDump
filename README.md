@@ -226,6 +226,8 @@ trading_bot_YYYYMMDD.log
 BTCDump/
 ├── BTCDump.py
 ├── app.py
+├── app_offline.py
+├── app_simple.py
 ├── requirements.txt
 ├── README.md
 ```
