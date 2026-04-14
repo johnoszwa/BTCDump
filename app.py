@@ -1,4 +1,4 @@
-# app.py - Complete Web UI with ALL Original Options
+# app.py - Complete Web UI with ALL Original Options (Fixed Version)
 from flask import Flask, render_template_string, jsonify, request, send_file
 from flask_cors import CORS
 import threading
@@ -13,12 +13,16 @@ import io
 import base64
 import matplotlib.pyplot as plt
 from BTCDump import BTCPredictorPro
+import logging
 
 app = Flask(__name__)
 CORS(app)
 
 # Initialize predictor
 predictor = BTCPredictorPro()
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 
 # HTML Template with ALL Original Options
 HTML_TEMPLATE = '''
@@ -29,7 +33,6 @@ HTML_TEMPLATE = '''
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BTC Dump Pro - Complete Trading Dashboard</title>
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         * {
             margin: 0;
@@ -85,10 +88,6 @@ HTML_TEMPLATE = '''
         .menu-card:hover {
             transform: translateY(-3px);
             box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-        }
-        
-        .menu-card:active {
-            transform: translateY(0);
         }
         
         .menu-icon {
@@ -175,7 +174,7 @@ HTML_TEMPLATE = '''
             flex-wrap: wrap;
         }
         
-        button, .btn {
+        button {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border: none;
@@ -187,12 +186,8 @@ HTML_TEMPLATE = '''
             transition: transform 0.2s;
         }
         
-        button:hover, .btn:hover {
+        button:hover {
             transform: scale(1.05);
-        }
-        
-        button:active, .btn:active {
-            transform: scale(0.95);
         }
         
         button.danger {
@@ -211,15 +206,18 @@ HTML_TEMPLATE = '''
             cursor: pointer;
         }
         
-        input {
-            cursor: text;
-            width: 150px;
-        }
-        
         .loading {
             text-align: center;
             padding: 20px;
             display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.8);
+            border-radius: 10px;
+            color: white;
+            z-index: 1000;
         }
         
         .spinner {
@@ -237,82 +235,13 @@ HTML_TEMPLATE = '''
             100% { transform: rotate(360deg); }
         }
         
-        .trade-log {
-            max-height: 300px;
-            overflow-y: auto;
-        }
-        
-        .trade-entry {
-            padding: 10px;
-            border-bottom: 1px solid #e5e7eb;
-            font-size: 14px;
-        }
-        
-        .trade-entry:hover {
-            background: #f9fafb;
-        }
-        
-        .portfolio-controls {
-            display: flex;
-            gap: 10px;
-            align-items: center;
-            margin-top: 15px;
-            flex-wrap: wrap;
-        }
-        
-        .risk-meter {
-            margin-top: 15px;
-            padding: 10px;
-            background: #f3f4f6;
-            border-radius: 8px;
-        }
-        
-        .risk-bar {
-            height: 8px;
-            background: #e5e7eb;
-            border-radius: 4px;
-            overflow: hidden;
-            margin-top: 5px;
-        }
-        
-        .risk-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #10b981, #f59e0b, #ef4444);
-            transition: width 0.3s;
-        }
-        
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.5);
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-        }
-        
-        .modal-content {
-            background: white;
-            padding: 30px;
-            border-radius: 15px;
-            max-width: 500px;
-            width: 90%;
-        }
-        
-        .modal-content input, .modal-content select {
-            width: 100%;
-            margin: 10px 0;
-        }
-        
-        .info-panel {
-            background: #f0fdf4;
-            border-left: 4px solid #10b981;
+        .error-message {
+            background: #fee2e2;
+            border-left: 4px solid #ef4444;
             padding: 15px;
             margin-bottom: 20px;
             border-radius: 8px;
+            color: #991b1b;
         }
         
         @media (max-width: 768px) {
@@ -339,14 +268,14 @@ HTML_TEMPLATE = '''
         <div class="header">
             <div class="title">🚀 BTC Dump Pro - Complete Trading Dashboard</div>
             <div style="margin-top: 10px; color: #666;">All original features + Advanced Portfolio Management</div>
-            <div class="info-panel" style="margin-top: 15px;">
-                <strong>📋 Quick Guide:</strong> Click any menu button below → Train model first → Then use Auto Live or manual prediction
+            <div id="connectionStatus" style="margin-top: 10px; padding: 8px; border-radius: 5px; background: #f3f4f6;">
+                ⚠️ Checking connection to Binance API...
             </div>
         </div>
         
         <!-- Menu Grid - ALL Original Options -->
         <div class="menu-grid">
-            <div class="menu-card" onclick="showTimeframeModal()">
+            <div class="menu-card" onclick="changeTimeframe()">
                 <div class="menu-icon">📊</div>
                 <div class="menu-title">1. Select Timeframe</div>
             </div>
@@ -374,7 +303,7 @@ HTML_TEMPLATE = '''
                 <div class="menu-icon">📉</div>
                 <div class="menu-title">7. Run Backtest</div>
             </div>
-            <div class="menu-card" onclick="showPortfolioModal()">
+            <div class="menu-card" onclick="showPortfolioStatus()">
                 <div class="menu-icon">💰</div>
                 <div class="menu-title">8. Portfolio Status</div>
             </div>
@@ -390,95 +319,50 @@ HTML_TEMPLATE = '''
                 <option value="5">1 Day</option>
             </select>
             <button onclick="quickTrain()" class="success">🚀 Quick Train</button>
-            <button onclick="quickPredict()">🔮 Quick Predict</button>
-            <button onclick="startAutoUpdate()">🤖 Auto Refresh (30s)</button>
-            <button onclick="stopAutoUpdate()">⏹️ Stop Refresh</button>
+            <button onclick="fetchData()">🔄 Refresh Dashboard</button>
         </div>
         
         <!-- Stats Dashboard -->
         <div class="stats-grid" id="statsGrid">
-            <!-- Stats will be loaded here -->
+            <div class="stat-card">
+                <div class="stat-label">💰 Current Price</div>
+                <div class="stat-value">Loading...</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">🔮 AI Prediction</div>
+                <div class="stat-value">Train model first</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">🎯 Signal</div>
+                <div class="stat-value">N/A</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">💼 Portfolio</div>
+                <div class="stat-value">$1,000</div>
+            </div>
         </div>
         
         <!-- Chart -->
         <div class="chart-container">
-            <div id="priceChart" style="height: 500px;"></div>
+            <div id="priceChart" style="height: 500px;">
+                <p style="text-align: center; padding: 50px;">Loading chart... Please train the model first (Option 2)</p>
+            </div>
         </div>
         
         <!-- Additional Info -->
         <div class="stats-grid">
             <div class="stat-card">
                 <div class="stat-label">Technical Indicators</div>
-                <div id="indicators">
-                    <!-- Indicators will be loaded here -->
-                </div>
+                <div id="indicators">Waiting for data...</div>
             </div>
             <div class="stat-card">
                 <div class="stat-label">Model Performance</div>
-                <div id="modelStats">
-                    <!-- Model stats will be loaded here -->
-                </div>
+                <div id="modelStats">Not trained yet</div>
             </div>
             <div class="stat-card">
                 <div class="stat-label">Trade Log</div>
-                <div id="tradeLog" class="trade-log">
-                    <!-- Trade log will be loaded here -->
-                </div>
+                <div id="tradeLog" style="max-height: 300px; overflow-y: auto;">No trades yet</div>
             </div>
-        </div>
-    </div>
-    
-    <!-- Timeframe Modal -->
-    <div id="timeframeModal" class="modal">
-        <div class="modal-content">
-            <h2 style="margin-bottom: 20px;">📊 Select Timeframe</h2>
-            <select id="modalTimeframe">
-                <option value="1">5 Minutes</option>
-                <option value="2">30 Minutes</option>
-                <option value="3" selected>1 Hour</option>
-                <option value="4">4 Hours</option>
-                <option value="5">1 Day</option>
-            </select>
-            <div style="display: flex; gap: 10px; margin-top: 20px;">
-                <button onclick="setTimeframe()" class="success">Apply</button>
-                <button onclick="closeModal('timeframeModal')">Cancel</button>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Portfolio Modal -->
-    <div id="portfolioModal" class="modal">
-        <div class="modal-content">
-            <h2 style="margin-bottom: 20px;">💰 Portfolio Management</h2>
-            <label>Current Portfolio: $<span id="currentPortfolioDisplay">0</span></label>
-            <input type="number" id="newPortfolioAmount" placeholder="Enter new amount" step="100" min="100">
-            <div style="display: flex; gap: 10px; margin-top: 20px;">
-                <button onclick="updatePortfolio()" class="success">Update Portfolio</button>
-                <button onclick="resetPortfolio()" class="danger">Reset to $1000</button>
-                <button onclick="closeModal('portfolioModal')">Cancel</button>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Auto Live Modal -->
-    <div id="autoLiveModal" class="modal">
-        <div class="modal-content">
-            <h2 style="margin-bottom: 20px;">🤖 Auto Live Mode Settings</h2>
-            <label>Refresh Interval (seconds):</label>
-            <input type="number" id="autoLiveDelay" value="60" min="30">
-            <div style="display: flex; gap: 10px; margin-top: 20px;">
-                <button onclick="startAutoLive()" class="success">Start</button>
-                <button onclick="closeModal('autoLiveModal')">Cancel</button>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Backtest Results Modal -->
-    <div id="backtestModal" class="modal">
-        <div class="modal-content">
-            <h2 style="margin-bottom: 20px;">📊 Backtest Results</h2>
-            <div id="backtestResults"></div>
-            <button onclick="closeModal('backtestModal')" style="margin-top: 20px;">Close</button>
         </div>
     </div>
     
@@ -489,230 +373,29 @@ HTML_TEMPLATE = '''
     
     <script>
         let autoUpdateInterval = null;
-        let autoLiveActive = false;
-        
-        // ============ ALL ORIGINAL MENU FUNCTIONS ============
-        
-        function showTimeframeModal() {
-            document.getElementById('timeframeModal').style.display = 'flex';
-        }
-        
-        function setTimeframe() {
-            const tf = document.getElementById('modalTimeframe').value;
-            changeTimeframe(tf);
-            closeModal('timeframeModal');
-        }
-        
-        function quickChangeTimeframe() {
-            const tf = document.getElementById('timeframe').value;
-            changeTimeframe(tf);
-        }
-        
-        async function changeTimeframe(tf) {
-            showLoading();
-            try {
-                const response = await fetch(`/api/timeframe/${tf}`, { method: 'POST' });
-                const data = await response.json();
-                if (data.success) {
-                    alert(`✅ Timeframe changed to ${data.timeframe}`);
-                    fetchData();
-                }
-            } catch (error) {
-                console.error('Error:', error);
-            } finally {
-                hideLoading();
-            }
-        }
-        
-        async function trainModel() {
-            showLoading();
-            try {
-                const response = await fetch('/api/train', { method: 'POST' });
-                const data = await response.json();
-                if (data.success) {
-                    alert(`✅ Model trained successfully!\nError: ${(data.error * 100).toFixed(2)}%`);
-                    fetchData();
-                } else {
-                    alert('❌ Failed to train model');
-                }
-            } catch (error) {
-                console.error('Error:', error);
-                alert('❌ Error training model');
-            } finally {
-                hideLoading();
-            }
-        }
-        
-        function quickTrain() {
-            trainModel();
-        }
-        
-        async function quickPredict() {
-            showLoading();
-            try {
-                const response = await fetch('/api/predict');
-                const data = await response.json();
-                if (data.success) {
-                    alert(`🔮 Prediction Complete!\nCurrent: $${data.current_price.toLocaleString()}\nPrediction: $${data.prediction.toLocaleString()}\nSignal: ${data.signal}\nConfidence: ${data.confidence}%`);
-                    fetchData();
-                }
-            } catch (error) {
-                console.error('Error:', error);
-            } finally {
-                hideLoading();
-            }
-        }
-        
-        async function showLiveChart() {
-            showLoading();
-            try {
-                const response = await fetch('/api/chart');
-                const data = await response.json();
-                if (data.image) {
-                    // Open chart in new window
-                    const win = window.open();
-                    win.document.write(`<img src="data:image/png;base64,${data.image}" style="max-width:100%">`);
-                }
-            } catch (error) {
-                console.error('Error:', error);
-                alert('Error generating chart');
-            } finally {
-                hideLoading();
-            }
-        }
-        
-        async function refreshData() {
-            showLoading();
-            try {
-                const response = await fetch('/api/refresh');
-                const data = await response.json();
-                if (data.success) {
-                    alert('✅ Data refreshed successfully!');
-                    fetchData();
-                }
-            } catch (error) {
-                console.error('Error:', error);
-            } finally {
-                hideLoading();
-            }
-        }
-        
-        function showLastPrediction() {
-            const predCard = document.querySelector('.stat-card:nth-child(2) .stat-value');
-            const signalCard = document.querySelector('.stat-card:nth-child(3) .signal-badge');
-            if (predCard && signalCard) {
-                alert(`📋 Last Analysis:\nPrediction: ${predCard.innerText}\nSignal: ${signalCard.innerText}`);
-            } else {
-                alert('No prediction available. Train the model first.');
-            }
-        }
-        
-        function startAutoLive() {
-            const delay = document.getElementById('autoLiveDelay').value;
-            closeModal('autoLiveModal');
-            showLoading();
-            fetch('/api/auto_live/start', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ delay: parseInt(delay) })
-            }).then(() => {
-                alert(`🤖 Auto Live Mode started (updates every ${delay} seconds)`);
-                autoLiveActive = true;
-                startAutoUpdate();
-                hideLoading();
-            }).catch(err => {
-                console.error(err);
-                hideLoading();
-            });
-        }
-        
-        async function runBacktest() {
-            showLoading();
-            try {
-                const response = await fetch('/api/backtest');
-                const data = await response.json();
-                if (data.success) {
-                    document.getElementById('backtestResults').innerHTML = `
-                        <div style="margin: 10px 0;">
-                            <strong>Initial Balance:</strong> $1,000.00<br>
-                            <strong>Final Balance:</strong> $${data.final_balance.toLocaleString()}<br>
-                            <strong>Profit/Loss:</strong> <span class="${data.profit >= 0 ? 'positive' : 'negative'}">$${data.profit.toLocaleString()}</span><br>
-                            <strong>ROI:</strong> <span class="${data.roi >= 0 ? 'positive' : 'negative'}">${data.roi.toFixed(2)}%</span><br>
-                            <strong>Total Trades:</strong> ${data.total_trades}<br>
-                            <strong>Win Rate:</strong> ${data.win_rate.toFixed(1)}%
-                        </div>
-                    `;
-                    document.getElementById('backtestModal').style.display = 'flex';
-                }
-            } catch (error) {
-                console.error('Error:', error);
-                alert('Error running backtest');
-            } finally {
-                hideLoading();
-            }
-        }
-        
-        function showPortfolioModal() {
-            const portfolioValue = document.querySelector('.stat-card:last-child .stat-value')?.innerText.replace('$', '') || '1000';
-            document.getElementById('currentPortfolioDisplay').innerText = portfolioValue;
-            document.getElementById('portfolioModal').style.display = 'flex';
-        }
-        
-        async function updatePortfolio() {
-            const newAmount = parseFloat(document.getElementById('newPortfolioAmount').value);
-            if (isNaN(newAmount) || newAmount < 100) {
-                alert('Please enter a valid amount (minimum $100)');
-                return;
-            }
-            
-            showLoading();
-            try {
-                const response = await fetch('/api/portfolio', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ amount: newAmount })
-                });
-                const data = await response.json();
-                if (data.success) {
-                    alert(`✅ Portfolio updated to $${newAmount.toLocaleString()}`);
-                    closeModal('portfolioModal');
-                    fetchData();
-                }
-            } catch (error) {
-                console.error('Error:', error);
-            } finally {
-                hideLoading();
-            }
-        }
-        
-        async function resetPortfolio() {
-            if (confirm('⚠️ Are you sure you want to reset your portfolio to $1000?')) {
-                showLoading();
-                try {
-                    const response = await fetch('/api/portfolio/reset', { method: 'POST' });
-                    const data = await response.json();
-                    if (data.success) {
-                        alert('✅ Portfolio reset to $1000');
-                        closeModal('portfolioModal');
-                        fetchData();
-                    }
-                } catch (error) {
-                    console.error('Error:', error);
-                } finally {
-                    hideLoading();
-                }
-            }
-        }
-        
-        // ============ DATA FETCHING ============
         
         async function fetchData() {
+            showLoading();
             try {
                 const response = await fetch('/api/data');
                 const data = await response.json();
+                
+                if (data.error) {
+                    document.getElementById('connectionStatus').innerHTML = '❌ ' + data.error;
+                    document.getElementById('connectionStatus').style.background = '#fee2e2';
+                    return;
+                }
+                
+                document.getElementById('connectionStatus').innerHTML = '✅ Connected to Binance API | Last Update: ' + data.last_update;
+                document.getElementById('connectionStatus').style.background = '#d1fae5';
+                
                 updateDashboard(data);
             } catch (error) {
                 console.error('Error:', error);
+                document.getElementById('connectionStatus').innerHTML = '❌ Connection error: ' + error.message;
+                document.getElementById('connectionStatus').style.background = '#fee2e2';
+            } finally {
+                hideLoading();
             }
         }
         
@@ -743,64 +426,28 @@ HTML_TEMPLATE = '''
                     <div class="stat-change ${data.portfolio.roi_percentage >= 0 ? 'positive' : 'negative'}">
                         ROI: ${data.portfolio.roi_percentage >= 0 ? '+' : ''}${data.portfolio.roi_percentage.toFixed(2)}%
                     </div>
-                    ${data.portfolio.can_trade ? '<div class="stat-change positive">✅ Trading Active</div>' : '<div class="stat-change negative">⛔ Trading Paused</div>'}
                 </div>
             `;
             
             // Update indicators
             document.getElementById('indicators').innerHTML = `
-                <div style="margin-bottom: 10px;">
-                    <strong>RSI:</strong> ${data.rsi.toFixed(1)}<br>
-                    <div style="background: #e5e7eb; height: 8px; border-radius: 4px; margin-top: 5px;">
-                        <div style="background: ${data.rsi > 70 ? '#ef4444' : data.rsi < 30 ? '#10b981' : '#667eea'}; width: ${data.rsi}%; height: 8px; border-radius: 4px;"></div>
-                    </div>
-                </div>
-                <div style="margin-bottom: 10px;">
-                    <strong>MACD:</strong> ${data.macd.toFixed(4)}<br>
-                    <strong>Signal:</strong> ${data.macd_signal.toFixed(4)}
-                </div>
-                <div style="margin-bottom: 10px;">
-                    <strong>ADX:</strong> ${data.adx.toFixed(1)}<br>
-                    <strong>Trend:</strong> ${data.adx > 25 ? '📈 Trending' : '📊 Ranging'}
-                </div>
-                <div>
-                    <strong>Volume Ratio:</strong> ${data.volume_ratio.toFixed(2)}x
-                </div>
-                <div class="risk-meter">
-                    <strong>⚠️ Risk Management</strong>
-                    <div style="margin-top: 10px;">
-                        <div>Daily Risk: $${data.portfolio.daily_loss.toFixed(2)} / $${(data.portfolio.current_capital * 0.06).toFixed(2)}</div>
-                        <div class="risk-bar">
-                            <div class="risk-fill" style="width: ${Math.min((data.portfolio.daily_loss / (data.portfolio.current_capital * 0.06) * 100), 100)}%"></div>
-                        </div>
-                    </div>
-                    <div>Consecutive Losses: ${data.portfolio.consecutive_losses}</div>
-                    <div>Max Risk/Trade: ${data.portfolio.max_risk_per_trade}%</div>
-                </div>
+                <div><strong>RSI:</strong> ${data.rsi.toFixed(1)}</div>
+                <div><strong>MACD:</strong> ${data.macd.toFixed(4)}</div>
+                <div><strong>ADX:</strong> ${data.adx.toFixed(1)}</div>
+                <div><strong>Volume Ratio:</strong> ${data.volume_ratio.toFixed(2)}x</div>
+                <div><strong>Model Error:</strong> ${(data.model_error * 100).toFixed(2)}%</div>
             `;
             
             // Update model stats
             document.getElementById('modelStats').innerHTML = `
-                <div style="margin-bottom: 10px;">
-                    <strong>Model Error:</strong> ${(data.model_error * 100).toFixed(2)}%
-                </div>
-                <div style="margin-bottom: 10px;">
-                    <strong>Last Update:</strong><br>
-                    ${data.last_update}
-                </div>
-                <div>
-                    <strong>Timeframe:</strong> ${data.timeframe}
-                </div>
-                <div style="margin-top: 10px;">
-                    <strong>Total P&L:</strong>
-                    <span class="${data.portfolio.total_pnl >= 0 ? 'positive' : 'negative'}">
-                        ${data.portfolio.total_pnl >= 0 ? '+' : ''}$${data.portfolio.total_pnl.toFixed(2)}
-                    </span>
-                </div>
+                <div><strong>Timeframe:</strong> ${data.timeframe}</div>
+                <div><strong>Last Update:</strong> ${data.last_update}</div>
+                <div><strong>Total P&L:</strong> $${data.portfolio.total_pnl.toFixed(2)}</div>
+                <div><strong>Trades Today:</strong> ${data.portfolio.trades_today}</div>
             `;
             
             // Update chart
-            if (data.chart_data) {
+            if (data.chart_data && data.chart_data.prices.length > 0) {
                 updateChart(data.chart_data);
             }
         }
@@ -812,43 +459,167 @@ HTML_TEMPLATE = '''
                 type: 'scatter',
                 mode: 'lines',
                 name: 'BTC Price',
-                line: { color: '#667eea', width: 2 },
-                fill: 'tozeroy',
-                fillcolor: 'rgba(102, 126, 234, 0.1)'
+                line: { color: '#667eea', width: 2 }
             };
             
             const layout = {
                 title: 'Bitcoin Price Chart',
-                xaxis: { title: 'Time', showgrid: true, gridcolor: '#e5e7eb' },
-                yaxis: { title: 'Price (USDT)', showgrid: true, gridcolor: '#e5e7eb' },
-                hovermode: 'closest',
-                plot_bgcolor: 'white',
-                paper_bgcolor: 'white'
+                xaxis: { title: 'Time' },
+                yaxis: { title: 'Price (USDT)' },
+                hovermode: 'closest'
             };
             
             Plotly.newPlot('priceChart', [trace], layout);
         }
         
-        // ============ AUTO UPDATE ============
-        
-        function startAutoUpdate() {
-            if (autoUpdateInterval) clearInterval(autoUpdateInterval);
-            autoUpdateInterval = setInterval(fetchData, 30000);
-            alert('🔄 Auto-refresh started (every 30 seconds)');
-        }
-        
-        function stopAutoUpdate() {
-            if (autoUpdateInterval) {
-                clearInterval(autoUpdateInterval);
-                autoUpdateInterval = null;
-                alert('⏹️ Auto-refresh stopped');
+        async function trainModel() {
+            showLoading();
+            try {
+                const response = await fetch('/api/train', { method: 'POST' });
+                const data = await response.json();
+                if (data.success) {
+                    alert(`✅ Model trained successfully!\nError: ${(data.error * 100).toFixed(2)}%`);
+                    fetchData();
+                } else {
+                    alert('❌ Failed to train model: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('❌ Error training model: ' + error.message);
+            } finally {
+                hideLoading();
             }
         }
         
-        // ============ UTILITIES ============
+        async function quickTrain() {
+            await trainModel();
+        }
         
-        function closeModal(modalId) {
-            document.getElementById(modalId).style.display = 'none';
+        async function changeTimeframe() {
+            const tf = prompt('Enter timeframe:\n1=5min, 2=30min, 3=1h, 4=4h, 5=1d', '3');
+            if (tf) {
+                showLoading();
+                try {
+                    const response = await fetch(`/api/timeframe/${tf}`, { method: 'POST' });
+                    const data = await response.json();
+                    if (data.success) {
+                        alert(`✅ Timeframe changed to ${data.timeframe}`);
+                        fetchData();
+                    }
+                } catch (error) {
+                    alert('Error changing timeframe');
+                } finally {
+                    hideLoading();
+                }
+            }
+        }
+        
+        async function quickChangeTimeframe() {
+            const tf = document.getElementById('timeframe').value;
+            showLoading();
+            try {
+                const response = await fetch(`/api/timeframe/${tf}`, { method: 'POST' });
+                const data = await response.json();
+                if (data.success) {
+                    fetchData();
+                }
+            } catch (error) {
+                console.error('Error:', error);
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        async function showLiveChart() {
+            alert('Chart is displayed above. Train the model first (Option 2) to see predictions.');
+        }
+        
+        async function refreshData() {
+            await fetchData();
+            alert('Data refreshed!');
+        }
+        
+        function showLastPrediction() {
+            fetch('/api/last_prediction')
+                .then(res => res.json())
+                .then(data => {
+                    alert(`📋 Last Analysis:\nPrediction: $${data.prediction.toLocaleString()}\nSignal: ${data.signal}`);
+                })
+                .catch(() => alert('No prediction available. Train the model first.'));
+        }
+        
+        async function startAutoLive() {
+            const delay = prompt('Enter refresh interval (seconds, min 30):', '60');
+            if (delay && delay >= 30) {
+                showLoading();
+                try {
+                    await fetch('/api/auto_live/start', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ delay: parseInt(delay) })
+                    });
+                    alert(`🤖 Auto Live Mode started (updates every ${delay} seconds)`);
+                    if (autoUpdateInterval) clearInterval(autoUpdateInterval);
+                    autoUpdateInterval = setInterval(fetchData, delay * 1000);
+                } catch (error) {
+                    alert('Error starting auto mode');
+                } finally {
+                    hideLoading();
+                }
+            } else {
+                alert('Please enter a valid delay (minimum 30 seconds)');
+            }
+        }
+        
+        async function runBacktest() {
+            showLoading();
+            try {
+                const response = await fetch('/api/backtest');
+                const data = await response.json();
+                if (data.success) {
+                    alert(`📊 Backtest Results:\nFinal Balance: $${data.final_balance.toLocaleString()}\nProfit: $${data.profit.toLocaleString()}\nROI: ${data.roi.toFixed(2)}%\nWin Rate: ${data.win_rate.toFixed(1)}%`);
+                } else {
+                    alert('Backtest failed. Train the model first.');
+                }
+            } catch (error) {
+                alert('Error running backtest');
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        async function showPortfolioStatus() {
+            try {
+                const response = await fetch('/api/portfolio');
+                const data = await response.json();
+                const change = prompt(`💰 Portfolio Status\n\nCurrent: $${data.current_capital.toLocaleString()}\nP&L: $${data.total_pnl.toLocaleString()}\nROI: ${data.roi_percentage.toFixed(2)}%\nTrades Today: ${data.trades_today}\n\nEnter new amount (min $100) or click Cancel:`, data.current_capital);
+                if (change && parseFloat(change) >= 100) {
+                    await updatePortfolio(parseFloat(change));
+                } else if (change && parseFloat(change) < 100) {
+                    alert('Minimum amount is $100');
+                }
+            } catch (error) {
+                alert('Error fetching portfolio status');
+            }
+        }
+        
+        async function updatePortfolio(amount) {
+            showLoading();
+            try {
+                const response = await fetch('/api/portfolio', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ amount: amount })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    alert(`✅ Portfolio updated to $${amount.toLocaleString()}`);
+                    fetchData();
+                }
+            } catch (error) {
+                alert('Error updating portfolio');
+            } finally {
+                hideLoading();
+            }
         }
         
         function showLoading() {
@@ -859,21 +630,17 @@ HTML_TEMPLATE = '''
             document.getElementById('loading').style.display = 'none';
         }
         
-        // Close modals when clicking outside
-        window.onclick = function(event) {
-            if (event.target.classList.contains('modal')) {
-                event.target.style.display = 'none';
-            }
-        }
-        
         // Initial load
         fetchData();
+        
+        // Auto refresh every 60 seconds
+        setInterval(fetchData, 60000);
     </script>
 </body>
 </html>
 '''
 
-# ============ API ROUTES FOR ALL ORIGINAL FEATURES ============
+# ============ API ROUTES ============
 
 @app.route('/')
 def index():
@@ -883,22 +650,48 @@ def index():
 def get_data():
     """Get current prediction data"""
     try:
-        predictor.df = predictor.fetch_data(predictor.interval)
-        if predictor.df is not None and len(predictor.df) > 0:
-            predictor.df = predictor.indicators(predictor.df)
-            
-            current_price = predictor.df['close'].iloc[-1]
-            rsi = predictor.df['RSI'].iloc[-1]
-            macd = predictor.df['MACD'].iloc[-1]
-            macd_signal = predictor.df['MACD_signal'].iloc[-1]
-            adx = predictor.df['adx'].iloc[-1] if 'adx' in predictor.df.columns else 25
-            volume_ratio = predictor.df['volume_ratio'].iloc[-1]
-            
-            if predictor.models:
+        # Try to fetch data
+        df = predictor.fetch_data(predictor.interval)
+        
+        if df is None or len(df) == 0:
+            return jsonify({
+                'error': 'Unable to fetch data from Binance API. Please check your internet connection.',
+                'current_price': 0,
+                'prediction': 0,
+                'signal': 'NO DATA',
+                'confidence': 0,
+                'rsi': 0,
+                'macd': 0,
+                'macd_signal': 0,
+                'adx': 0,
+                'volume_ratio': 0,
+                'model_error': 0,
+                'last_update': 'Never',
+                'timeframe': predictor.interval,
+                'portfolio': predictor.get_portfolio_info(),
+                'change_percent': 0,
+                'chart_data': {'timestamps': [], 'prices': []}
+            })
+        
+        predictor.df = predictor.indicators(df)
+        
+        if predictor.df is None or len(predictor.df) == 0:
+            return jsonify({'error': 'Error calculating indicators'})
+        
+        current_price = float(predictor.df['close'].iloc[-1])
+        rsi = float(predictor.df['RSI'].iloc[-1]) if 'RSI' in predictor.df.columns else 50
+        macd = float(predictor.df['MACD'].iloc[-1]) if 'MACD' in predictor.df.columns else 0
+        macd_signal = float(predictor.df['MACD_signal'].iloc[-1]) if 'MACD_signal' in predictor.df.columns else 0
+        adx = float(predictor.df['adx'].iloc[-1]) if 'adx' in predictor.df.columns else 25
+        volume_ratio = float(predictor.df['volume_ratio'].iloc[-1]) if 'volume_ratio' in predictor.df.columns else 1
+        
+        # Make prediction if model exists
+        if predictor.models:
+            try:
                 X, y = predictor.features(predictor.df)
                 if len(X) > 0:
                     last_features = X[-1]
-                    prediction = predictor.predict(predictor.models, last_features)
+                    prediction = float(predictor.predict(predictor.models, last_features))
                     signal, confidence = predictor.generate_signal(
                         current_price, prediction, rsi, macd, macd_signal, adx, volume_ratio
                     )
@@ -906,138 +699,151 @@ def get_data():
                     prediction = current_price
                     signal = "HOLD"
                     confidence = 0
-            else:
+            except Exception as e:
+                logging.error(f"Prediction error: {e}")
                 prediction = current_price
-                signal = "TRAIN FIRST"
+                signal = "ERROR"
                 confidence = 0
-            
-            chart_data = {
-                'timestamps': predictor.df['time'].dt.strftime('%Y-%m-%d %H:%M').tolist()[-100:],
-                'prices': predictor.df['close'].tolist()[-100:]
-            }
-            
-            portfolio_info = predictor.get_portfolio_info()
-            
-            return jsonify({
-                'current_price': current_price,
-                'prediction': prediction,
-                'signal': signal,
-                'confidence': confidence,
-                'rsi': rsi,
-                'macd': macd,
-                'macd_signal': macd_signal,
-                'adx': adx,
-                'volume_ratio': volume_ratio,
-                'model_error': predictor.models['error'] if predictor.models else 0,
-                'last_update': predictor.last_update or 'Never',
-                'timeframe': predictor.interval,
-                'portfolio': portfolio_info,
-                'change_percent': ((current_price - predictor.df['close'].iloc[-2]) / predictor.df['close'].iloc[-2] * 100) if len(predictor.df) > 1 else 0,
-                'chart_data': chart_data
-            })
+        else:
+            prediction = current_price
+            signal = "TRAIN FIRST"
+            confidence = 0
+        
+        # Prepare chart data
+        chart_data = {
+            'timestamps': predictor.df['time'].dt.strftime('%Y-%m-%d %H:%M').tolist()[-100:],
+            'prices': [float(x) for x in predictor.df['close'].tolist()[-100:]]
+        }
+        
+        portfolio_info = predictor.get_portfolio_info()
+        
+        # Calculate change percentage
+        change_percent = 0
+        if len(predictor.df) > 1:
+            prev_close = float(predictor.df['close'].iloc[-2])
+            change_percent = ((current_price - prev_close) / prev_close * 100)
+        
+        return jsonify({
+            'current_price': current_price,
+            'prediction': prediction,
+            'signal': signal,
+            'confidence': int(confidence),
+            'rsi': rsi,
+            'macd': macd,
+            'macd_signal': macd_signal,
+            'adx': adx,
+            'volume_ratio': volume_ratio,
+            'model_error': float(predictor.models['error']) if predictor.models else 0,
+            'last_update': predictor.last_update or 'Never',
+            'timeframe': predictor.interval,
+            'portfolio': portfolio_info,
+            'change_percent': change_percent,
+            'chart_data': chart_data
+        })
+        
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        logging.error(f"Error in get_data: {str(e)}")
+        return jsonify({
+            'error': str(e),
+            'current_price': 0,
+            'prediction': 0,
+            'signal': 'ERROR',
+            'confidence': 0,
+            'rsi': 0,
+            'macd': 0,
+            'macd_signal': 0,
+            'adx': 0,
+            'volume_ratio': 0,
+            'model_error': 0,
+            'last_update': 'Never',
+            'timeframe': predictor.interval,
+            'portfolio': predictor.get_portfolio_info(),
+            'change_percent': 0,
+            'chart_data': {'timestamps': [], 'prices': []}
+        })
 
 @app.route('/api/train', methods=['POST'])
 def train_model():
     """Train the model"""
     try:
-        predictor.df = predictor.fetch_data(predictor.interval)
-        if predictor.df is not None:
-            predictor.df = predictor.indicators(predictor.df)
-            X, y = predictor.features(predictor.df)
-            predictor.models = predictor.train(X, y)
-            return jsonify({'success': True, 'error': predictor.models['error']})
+        df = predictor.fetch_data(predictor.interval)
+        if df is None or len(df) < 100:
+            return jsonify({'success': False, 'error': 'Insufficient data. Need at least 100 candles.'})
+        
+        predictor.df = predictor.indicators(df)
+        X, y = predictor.features(predictor.df)
+        
+        if len(X) == 0:
+            return jsonify({'success': False, 'error': 'Not enough data for training.'})
+        
+        predictor.models = predictor.train(X, y)
+        return jsonify({'success': True, 'error': predictor.models['error']})
+        
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        logging.error(f"Training error: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)})
 
-@app.route('/api/predict')
-def quick_predict():
-    """Quick prediction"""
-    try:
-        predictor.df = predictor.fetch_data(predictor.interval)
-        if predictor.df and predictor.models:
-            predictor.df = predictor.indicators(predictor.df)
-            X, y = predictor.features(predictor.df)
-            if len(X) > 0:
-                last_features = X[-1]
-                prediction = predictor.predict(predictor.models, last_features)
-                current_price = predictor.df['close'].iloc[-1]
-                return jsonify({
-                    'success': True,
-                    'current_price': current_price,
-                    'prediction': prediction,
-                    'signal': "READY",
-                    'confidence': 75
-                })
-        return jsonify({'success': False})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/chart')
-def get_chart():
-    """Generate and return chart as image"""
-    try:
-        predictor.df = predictor.fetch_data(predictor.interval)
-        if predictor.df is not None:
-            predictor.df = predictor.indicators(predictor.df)
-            
-            # Create plot
-            plt.style.use("dark_background")
-            fig, ax = plt.subplots(figsize=(12, 6))
-            ax.plot(predictor.df["time"], predictor.df["close"], label="BTC Price", linewidth=2, color='cyan')
-            ax.plot(predictor.df["time"], predictor.df["ma20"], label="MA20", linewidth=1, color='yellow')
-            ax.legend()
-            ax.set_title(f'BTC Price - {predictor.interval}')
-            ax.set_ylabel('Price (USDT)')
-            ax.grid(True, alpha=0.3)
-            
-            # Convert to base64
-            buf = io.BytesIO()
-            plt.savefig(buf, format='png', bbox_inches='tight')
-            buf.seek(0)
-            img_base64 = base64.b64encode(buf.read()).decode()
-            plt.close()
-            
-            return jsonify({'image': img_base64})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/refresh')
-def refresh_data():
-    """Refresh data only"""
-    try:
-        predictor.df = predictor.fetch_data(predictor.interval)
-        if predictor.df is not None:
-            predictor.df = predictor.indicators(predictor.df)
-            return jsonify({'success': True})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+@app.route('/api/timeframe/<tf>', methods=['POST'])
+def change_timeframe(tf):
+    """Change timeframe"""
+    timeframe_map = {'1': '5m', '2': '30m', '3': '1h', '4': '4h', '5': '1d'}
+    predictor.interval = timeframe_map.get(tf, '1h')
+    return jsonify({'success': True, 'timeframe': predictor.interval})
 
 @app.route('/api/backtest')
 def run_backtest():
     """Run backtest"""
     try:
-        predictor.df = predictor.fetch_data(predictor.interval)
-        if predictor.df is not None:
-            predictor.df = predictor.indicators(predictor.df)
-            X, y = predictor.features(predictor.df)
-            predictor.models = predictor.train(X, y)
-            final_balance, total_trades, win_rate = predictor.backtest(X, predictor.df)
-            return jsonify({
-                'success': True,
-                'final_balance': final_balance,
-                'profit': final_balance - 1000,
-                'roi': ((final_balance - 1000) / 1000 * 100),
-                'total_trades': total_trades,
-                'win_rate': win_rate
-            })
+        if not predictor.models:
+            return jsonify({'success': False, 'error': 'Please train the model first (Option 2)'})
+        
+        df = predictor.fetch_data(predictor.interval)
+        if df is None:
+            return jsonify({'success': False, 'error': 'Failed to fetch data'})
+        
+        predictor.df = predictor.indicators(df)
+        X, y = predictor.features(predictor.df)
+        
+        final_balance, total_trades, win_rate = predictor.backtest(X, predictor.df)
+        
+        return jsonify({
+            'success': True,
+            'final_balance': final_balance,
+            'profit': final_balance - 1000,
+            'roi': ((final_balance - 1000) / 1000 * 100),
+            'total_trades': total_trades,
+            'win_rate': win_rate
+        })
+        
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/portfolio', methods=['GET', 'POST'])
+def handle_portfolio():
+    """Get or update portfolio"""
+    if request.method == 'GET':
+        return jsonify(predictor.get_portfolio_info())
+    else:
+        try:
+            data = request.json
+            new_amount = float(data.get('amount', 0))
+            if predictor.set_portfolio_amount(new_amount):
+                return jsonify({'success': True, 'new_amount': new_amount})
+            return jsonify({'success': False, 'error': 'Invalid amount'})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/last_prediction')
+def last_prediction():
+    """Get last prediction"""
+    return jsonify({
+        'prediction': predictor.last_prediction or 0,
+        'signal': predictor.last_signal or 'N/A'
+    })
 
 @app.route('/api/auto_live/start', methods=['POST'])
 def start_auto_live():
-    """Start auto live mode in background"""
+    """Start auto live mode"""
     data = request.json
     delay = data.get('delay', 60)
     
@@ -1048,51 +854,15 @@ def start_auto_live():
     thread.start()
     return jsonify({'success': True})
 
-@app.route('/api/timeframe/<tf>', methods=['POST'])
-def change_timeframe(tf):
-    """Change timeframe"""
-    timeframe_map = {'1': '5m', '2': '30m', '3': '1h', '4': '4h', '5': '1d'}
-    predictor.interval = timeframe_map.get(tf, '1h')
-    return jsonify({'success': True, 'timeframe': predictor.interval})
-
-@app.route('/api/portfolio', methods=['POST'])
-def update_portfolio():
-    """Update portfolio amount"""
-    try:
-        data = request.json
-        new_amount = float(data.get('amount', 0))
-        if predictor.set_portfolio_amount(new_amount):
-            return jsonify({'success': True, 'new_amount': new_amount})
-        return jsonify({'success': False}), 400
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/portfolio/reset', methods=['POST'])
-def reset_portfolio():
-    """Reset portfolio"""
-    try:
-        predictor.reset_portfolio()
-        return jsonify({'success': True})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
 if __name__ == '__main__':
     print("="*60)
     print("🚀 BTC Dump Pro - Complete Trading Dashboard")
     print("="*60)
-    print("\n📋 ALL ORIGINAL MENU OPTIONS AVAILABLE:")
-    print("   1. Select Timeframe")
-    print("   2. Train & Predict")
-    print("   3. Show Live Chart")
-    print("   4. Refresh Data Only")
-    print("   5. Show Last Prediction")
-    print("   6. Auto Live Mode")
-    print("   7. Run Backtest")
-    print("   8. Portfolio Status (NEW!)")
-    print("\n💰 NEW: Dynamic Portfolio Management")
-    print("   - Change portfolio amount anytime")
-    print("   - Real-time risk tracking")
-    print("   - Automatic position sizing")
+    print("\n📋 IMPORTANT - First Time Setup:")
+    print("   1. Make sure you have an internet connection")
+    print("   2. Click 'Quick Train' to train the AI model")
+    print("   3. Wait 10-30 seconds for training to complete")
+    print("   4. Dashboard will update automatically")
     print("\n📊 Open your browser: http://localhost:5000")
     print("⚡ Press Ctrl+C to stop the server")
     print("="*60)
